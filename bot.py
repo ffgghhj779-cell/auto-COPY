@@ -14,9 +14,8 @@ from telethon.sessions import StringSession
 API_ID   = 34105911
 API_HASH = 'b444ab6b4eeba8a66db4143b934dc540'
 
-# بعد تشغيل الكود على جهازك لأول مرة، هتاخد نص الجلسة (StringSession) الطويل
-# وفي ريندر (Render) هتحطه كمتغير بيئة (Environment Variable) باسم SESSION_STRING.
-SESSION_STRING = os.environ.get('SESSION_STRING', '')
+# تم التعديل هنا ليقرأ المتغير بنفس الاسم اللي حطيناه في Render
+SESSION_STRING = os.environ.get('TELEGRAM_SESSION', '')
 
 SOURCE_CHANNELS = ['@protrading36', '@protradingg1', 'me']
 DEST_CHANNEL    = '@mycryptoappTT20'

@@ -17,7 +17,17 @@ API_HASH = 'b444ab6b4eeba8a66db4143b934dc540'
 # تم التعديل هنا ليقرأ المتغير بنفس الاسم اللي حطيناه في Render
 SESSION_STRING = os.environ.get('TELEGRAM_SESSION', '')
 
-SOURCE_CHANNELS = ['@protrading36', '@protradingg1', 'me']
+SOURCE_CHANNELS = [
+    '@protrading36', 
+    '@protradingg1', 
+    'me',
+    '@TradeX_net',
+    '@elhorreyabrokeragetelegram',
+    '@Crypto_Cabaal',
+    '@Alwegdanycryptonews',
+    '@lrnai',
+    '@sherlockholmesfx'
+]
 DEST_CHANNEL    = '@mycryptoappTT20'
 
 FLASK_PORT    = 10000

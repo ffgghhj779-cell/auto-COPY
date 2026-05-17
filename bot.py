@@ -6,6 +6,7 @@ import threading
 from flask import Flask
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from telethon.errors import ChatForwardsRestrictedError  # الاستدعاء الجديد لكسر الحماية
 
 # ══════════════════════════════════════════════════════════════
 # الإعدادات (CONFIGURATION)
@@ -14,7 +15,6 @@ from telethon.sessions import StringSession
 API_ID   = 34105911
 API_HASH = 'b444ab6b4eeba8a66db4143b934dc540'
 
-# تم التعديل هنا ليقرأ المتغير بنفس الاسم اللي حطيناه في Render
 SESSION_STRING = os.environ.get('TELEGRAM_SESSION', '')
 
 SOURCE_CHANNELS = [
@@ -45,7 +45,7 @@ logging.basicConfig(
 log = logging.getLogger('AutoCopier')
 
 # ══════════════════════════════════════════════════════════════
-# خادم FLASK — لمنع غفوة السيرفر (UptimeRobot target)
+# خادم FLASK — لمنع غفوة السيرفر
 # ══════════════════════════════════════════════════════════════
 
 flask_app = Flask(__name__)
@@ -63,13 +63,12 @@ def start_flask():
     log.info(f'Keep-alive server running on port {FLASK_PORT}')
 
 # ══════════════════════════════════════════════════════════════
-# نظام منع التكرار (ANTI-DUPLICATION CACHE)
+# نظام منع التكرار
 # ══════════════════════════════════════════════════════════════
 
 processed: set = set()
 
 def register(msg_id: int) -> bool:
-    """ترجع True لو رسالة جديدة (مش مكررة)."""
     if msg_id in processed:
         return False
     processed.add(msg_id)
@@ -79,10 +78,9 @@ def register(msg_id: int) -> bool:
     return True
 
 # ══════════════════════════════════════════════════════════════
-# تهيئة عميل تليجرام (TELETHON CLIENT) - تم حل مشكلة الـ Event Loop هنا
+# تهيئة عميل تليجرام
 # ══════════════════════════════════════════════════════════════
 
-# إنشاء الموتور (Event Loop) يدوياً قبل تهيئة تليجرام
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
@@ -94,7 +92,7 @@ client = TelegramClient(
 )
 
 # ══════════════════════════════════════════════════════════════
-# المعالج الأساسي — نسخ (Copy) وليس تحويل (Forward)
+# المعالج الأساسي — (تم تحديثه لكسر حماية القنوات)
 # ══════════════════════════════════════════════════════════════
 
 @client.on(events.NewMessage(chats=SOURCE_CHANNELS))
@@ -104,32 +102,43 @@ async def handle_new_message(event: events.NewMessage.Event):
         msg_id = msg.id
 
         if not register(msg_id):
-            log.warning(f'تم تجاهل رسالة مكررة — msg_id={msg_id}')
             return
 
         source = getattr(event.chat, 'username', str(event.chat_id))
         log.info(f'رسالة جديدة من @{source} | msg_id={msg_id}')
 
-        # إرسال الرسالة كأنها جديدة تماماً بدون أي أثر للمصدر
-        await client.send_message(DEST_CHANNEL, msg)
+        try:
+            # المحاولة العادية للنسخ السريع
+            await client.send_message(DEST_CHANNEL, msg)
+            log.info(f'تم النسخ إلى {DEST_CHANNEL} بنجاح.')
+            
+        except ChatForwardsRestrictedError:
+            # لو القناة قافلة التحويل والنسخ (محمية)
+            log.warning(f'القناة @{source} محمية. جاري كسر الحماية والتحميل يدوياً...')
+            if msg.media:
+                file_path = await msg.download_media()
+                await client.send_message(DEST_CHANNEL, msg.text, file=file_path)
+                # مسح الملف من السيرفر بعد الإرسال عشان الميموري ماتتمليش
+                if file_path and os.path.exists(file_path):
+                    os.remove(file_path)
+            else:
+                await client.send_message(DEST_CHANNEL, msg.text)
+                
+            log.info(f'تم تجاوز الحماية والنسخ إلى {DEST_CHANNEL} بنجاح.')
 
-        log.info(f'تم النسخ إلى {DEST_CHANNEL} بنجاح.')
-
-    except Exception:
-        log.exception('حدث خطأ أثناء نسخ الرسالة.')
+    except Exception as e:
+        log.exception(f'حدث خطأ أثناء نسخ الرسالة: {e}')
 
 # ══════════════════════════════════════════════════════════════
-# نقطة البداية (ENTRY POINT)
+# نقطة البداية
 # ══════════════════════════════════════════════════════════════
 
 async def main():
     await client.start()
-
-    # 💡 التحديث الجديد: قراءة المحادثات لتنشيط الذاكرة وربط الـ IDs بالأسماء
+    
     log.info('جاري تنشيط ذاكرة القنوات (get_dialogs) لضمان التقاط كل الرسائل...')
     await client.get_dialogs()
 
-    # أول تشغيل على جهازك: هيطبع نص الجلسة عشان تنسخه وتحفظه
     if not SESSION_STRING:
         saved = client.session.save()
         log.info('════════════════════════════════════════')
@@ -147,5 +156,4 @@ async def main():
 
 if __name__ == '__main__':
     start_flask()
-    # تشغيل البوت باستخدام الموتور اللي عملناه فوق
     loop.run_until_complete(main())

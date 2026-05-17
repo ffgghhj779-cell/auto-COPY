@@ -125,6 +125,10 @@ async def handle_new_message(event: events.NewMessage.Event):
 async def main():
     await client.start()
 
+    # 💡 التحديث الجديد: قراءة المحادثات لتنشيط الذاكرة وربط الـ IDs بالأسماء
+    log.info('جاري تنشيط ذاكرة القنوات (get_dialogs) لضمان التقاط كل الرسائل...')
+    await client.get_dialogs()
+
     # أول تشغيل على جهازك: هيطبع نص الجلسة عشان تنسخه وتحفظه
     if not SESSION_STRING:
         saved = client.session.save()

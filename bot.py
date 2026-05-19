@@ -2,7 +2,7 @@ import os
 import logging
 import asyncio
 import threading
-import re  # 💡 المكتبة الجديدة المسؤولة عن تنضيف النص
+import re
 
 from flask import Flask
 from telethon import TelegramClient, events
@@ -64,15 +64,17 @@ def start_flask():
     log.info(f'Keep-alive server running on port {FLASK_PORT}')
 
 # ══════════════════════════════════════════════════════════════
-# نظام منع التكرار
+# نظام منع التكرار المعدل (تم إصلاح الثغرة هنا)
 # ══════════════════════════════════════════════════════════════
 
 processed: set = set()
 
-def register(msg_id: int) -> bool:
-    if msg_id in processed:
+def register(chat_id: int, msg_id: int) -> bool:
+    """ترجع True لو الرسالة جديدة فعلاً بناءً على ميكس (رقم القناة + رقم الرسالة)."""
+    unique_key = (chat_id, msg_id)
+    if unique_key in processed:
         return False
-    processed.add(msg_id)
+    processed.add(unique_key)
     if len(processed) > CACHE_LIMIT:
         processed.clear()
         log.info('تم تفريغ ذاكرة التكرار المؤقتة.')
@@ -99,22 +101,24 @@ client = TelegramClient(
 @client.on(events.NewMessage(chats=SOURCE_CHANNELS))
 async def handle_new_message(event: events.NewMessage.Event):
     try:
-        msg    = event.message
-        msg_id = msg.id
+        msg     = event.message
+        msg_id  = msg.id
+        chat_id = event.chat_id  # سحب رقم القناة الفريد
 
-        if not register(msg_id):
+        # التحقق من التكرار باستخدام المفتاح المركب الجديد
+        if not register(chat_id, msg_id):
+            log.warning(f'تم تجاهل رسالة مكررة أو متضاربة الأرقام — chat_id={chat_id} | msg_id={msg_id}')
             return
 
-        source = getattr(event.chat, 'username', str(event.chat_id))
+        source = getattr(event.chat, 'username', str(chat_id))
         log.info(f'رسالة جديدة من @{source} | msg_id={msg_id}')
 
-        # 💡 التعديل الجديد: تنظيف الرسالة من أي منشن أو لينكات تليجرام
+        # تنظيف الرسالة من أي منشن أو لينكات تليجرام
         original_text = msg.text or ""
-        # الرادار بيمسح أي @username أو t.me/username عشان يقفل كل الثغرات
         clean_text = re.sub(r'(@[a-zA-Z0-9_]+)|(https?://t\.me/[a-zA-Z0-9_]+)|(t\.me/[a-zA-Z0-9_]+)', '', original_text)
 
         try:
-            # المحاولة العادية للنسخ السريع (بالنص النضيف)
+            # المحاولة العادية للنسخ السريع
             if msg.media:
                 await client.send_message(DEST_CHANNEL, clean_text, file=msg.media)
             else:
@@ -123,7 +127,7 @@ async def handle_new_message(event: events.NewMessage.Event):
             log.info(f'تم النسخ إلى {DEST_CHANNEL} بنجاح.')
             
         except ChatForwardsRestrictedError:
-            # لو القناة قافلة التحويل والنسخ (محمية)
+            # تجاوز حماية القنوات المقفولة
             log.warning(f'القناة @{source} محمية. جاري كسر الحماية والتحميل يدوياً...')
             if msg.media:
                 file_path = await msg.download_media()

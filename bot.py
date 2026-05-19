@@ -2,11 +2,12 @@ import os
 import logging
 import asyncio
 import threading
+import re  # 💡 المكتبة الجديدة المسؤولة عن تنضيف النص
 
 from flask import Flask
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from telethon.errors import ChatForwardsRestrictedError  # الاستدعاء الجديد لكسر الحماية
+from telethon.errors import ChatForwardsRestrictedError
 
 # ══════════════════════════════════════════════════════════════
 # الإعدادات (CONFIGURATION)
@@ -92,7 +93,7 @@ client = TelegramClient(
 )
 
 # ══════════════════════════════════════════════════════════════
-# المعالج الأساسي — (تم تحديثه لكسر حماية القنوات)
+# المعالج الأساسي 
 # ══════════════════════════════════════════════════════════════
 
 @client.on(events.NewMessage(chats=SOURCE_CHANNELS))
@@ -107,9 +108,18 @@ async def handle_new_message(event: events.NewMessage.Event):
         source = getattr(event.chat, 'username', str(event.chat_id))
         log.info(f'رسالة جديدة من @{source} | msg_id={msg_id}')
 
+        # 💡 التعديل الجديد: تنظيف الرسالة من أي منشن أو لينكات تليجرام
+        original_text = msg.text or ""
+        # الرادار بيمسح أي @username أو t.me/username عشان يقفل كل الثغرات
+        clean_text = re.sub(r'(@[a-zA-Z0-9_]+)|(https?://t\.me/[a-zA-Z0-9_]+)|(t\.me/[a-zA-Z0-9_]+)', '', original_text)
+
         try:
-            # المحاولة العادية للنسخ السريع
-            await client.send_message(DEST_CHANNEL, msg)
+            # المحاولة العادية للنسخ السريع (بالنص النضيف)
+            if msg.media:
+                await client.send_message(DEST_CHANNEL, clean_text, file=msg.media)
+            else:
+                await client.send_message(DEST_CHANNEL, clean_text)
+                
             log.info(f'تم النسخ إلى {DEST_CHANNEL} بنجاح.')
             
         except ChatForwardsRestrictedError:
@@ -117,12 +127,11 @@ async def handle_new_message(event: events.NewMessage.Event):
             log.warning(f'القناة @{source} محمية. جاري كسر الحماية والتحميل يدوياً...')
             if msg.media:
                 file_path = await msg.download_media()
-                await client.send_message(DEST_CHANNEL, msg.text, file=file_path)
-                # مسح الملف من السيرفر بعد الإرسال عشان الميموري ماتتمليش
+                await client.send_message(DEST_CHANNEL, clean_text, file=file_path)
                 if file_path and os.path.exists(file_path):
                     os.remove(file_path)
             else:
-                await client.send_message(DEST_CHANNEL, msg.text)
+                await client.send_message(DEST_CHANNEL, clean_text)
                 
             log.info(f'تم تجاوز الحماية والنسخ إلى {DEST_CHANNEL} بنجاح.')
 

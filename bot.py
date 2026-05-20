@@ -29,7 +29,7 @@ SOURCE_CHANNELS = [
     '@lrnai',
     '@sherlockholmesfx'
 ]
-DEST_CHANNEL    = '@mycryptoappTT20'
+DEST_CHANNEL = -1003772528470'
 
 FLASK_PORT    = 10000
 CACHE_LIMIT   = 1000
